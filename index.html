@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>📺 TV Panel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#070a12;color:#d0d8f0;font-family:'Segoe UI',Tahoma,sans-serif;font-size:13px}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:#0b0e1c}
+  ::-webkit-scrollbar-thumb{background:#1a2035;border-radius:4px}
+  input,textarea,button{font-family:inherit;outline:none}
+  button{cursor:pointer}
+  .hov:hover{background:rgba(255,255,255,.05)!important}
+  .tr:hover td{background:rgba(255,255,255,.02)}
+  .ibtn{background:none;border:none;padding:5px 8px;border-radius:6px;font-size:14px}
+  .ibtn:hover{background:rgba(255,255,255,.09)}
+  .inp:focus{border-color:#3a5090!important}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .tab-btn{background:none;border:none;padding:10px 18px;font-size:13px;border-bottom:2px solid transparent;white-space:nowrap}
+  .tab-btn.active{color:#6c9fff;border-bottom-color:#6c9fff;font-weight:700}
+  .tab-btn:not(.active){color:#40506a}
+  .filter-btn{border-radius:6px;padding:5px 11px;font-size:12px;font-weight:600;border:1px solid #131628;background:transparent;color:#384058}
+  .filter-btn.active{background:#182040;border-color:#304070;color:#6a9fff}
+  .pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const SK = { members: "tvp_members", deposits: "tvp_deposits" };
+const loadLS = (k, fb) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; } };
+const saveLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+const fmt = (n) => Number(n||0).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " ₺";
+const todayStr = () => new Date().toISOString().slice(0,10);
+const addYear = (d) => { const x=new Date(d); x.setFullYear(x.getFullYear()+1); return x.toISOString().slice(0,10); };
+const daysLeft = (e) => { const n=new Date(); n.setHours(0,0,0,0); const d=new Date(e); d.setHours(0,0,0,0); return Math.ceil((d-n)/86400000); };
+
+const EMPTY_M = { username:"", password:"", startDate:todayStr(), endDate:addYear(todayStr()), cost:"", price:"", collected:false, note:"" };
+const EMPTY_D = { amount:"", date:todayStr(), note:"" };
+
+function App() {
+  const [members,  setMembers]  = useState(() => loadLS(SK.members,  []));
+  const [deposits, setDeposits] = useState(() => loadLS(SK.deposits, []));
+  const [page,     setPage]     = useState("members");
+  const [modal,    setModal]    = useState(null);
+  const [mForm,    setMForm]    = useState(EMPTY_M);
+  const [dForm,    setDForm]    = useState(EMPTY_D);
+  const [editId,   setEditId]   = useState(null);
+  const [search,   setSearch]   = useState("");
+  const [filter,   setFilter]   = useState("all");
+  const [showPwd,  setShowPwd]  = useState({});
+  const [delId,    setDelId]    = useState(null);
+  const [toast,    setToast]    = useState(null);
+  const [backupText, setBackupText] = useState("");
+
+  useEffect(() => saveLS(SK.members,  members),  [members]);
+  useEffect(() => saveLS(SK.deposits, deposits), [deposits]);
+
+  // Bildirim: sayfa açılınca süresi yaklaşan/dolmuş üyeleri bildir
+  useEffect(() => {
+    if (!("Notification" in window)) return;
+    const sendNotif = () => {
+      const expiring = members.filter(m => { const d=daysLeft(m.endDate); return d>=0&&d<=7; });
+      const expired  = members.filter(m => daysLeft(m.endDate)<0);
+      if (expiring.length>0) new Notification("\u23f0 TV Panel \u2014 Yak\u0131nda Bitiyor!", {
+        body: expiring.map(m=>m.username+": "+daysLeft(m.endDate)+" g\u00fcn kald\u0131").join("\n")
+      });
+      if (expired.length>0) new Notification("\u26a0\ufe0f TV Panel \u2014 S\u00fcresi Doldu!", {
+        body: expired.map(m=>m.username).join(", ")+" \u2014 s\u00fcresi doldu!"
+      });
+    };
+    if (Notification.permission==="granted") sendNotif();
+    else if (Notification.permission==="default") Notification.requestPermission().then(p=>{ if(p==="granted") sendNotif(); });
+  }, []);
+
+  const showToast = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
+
+  // Finance
+  const totalDeposited  = deposits.reduce((s,d) => s+Number(d.amount||0), 0);
+  const totalCost       = members.reduce((s,m)  => s+Number(m.cost||0),   0);
+  const balance         = totalDeposited - totalCost;
+  const totalPrice      = members.reduce((s,m)  => s+Number(m.price||0),  0);
+  const totalCollected  = members.filter(m=>m.collected).reduce((s,m) => s+Number(m.price||0), 0);
+  const totalReceivable = totalPrice - totalCollected;
+  const grossProfit     = totalPrice - totalCost;
+
+  // Member CRUD
+  const saveMember = () => {
+    if (!mForm.username.trim()||!mForm.password.trim()||!mForm.startDate||!mForm.endDate) { showToast("Zorunlu alanları doldurun!","err"); return; }
+    const m = {...mForm, cost:Number(mForm.cost)||0, price:Number(mForm.price)||0};
+    if (editId) setMembers(ms => ms.map(x => x.id===editId ? {...x,...m} : x));
+    else        setMembers(ms => [...ms, {...m, id:uid()}]);
+    setMForm(EMPTY_M); setEditId(null); setModal(null);
+    showToast(editId ? "Üye güncellendi ✓" : "Yeni üye eklendi ✓");
+  };
+  const deleteMember = () => { setMembers(ms=>ms.filter(m=>m.id!==delId)); setDelId(null); showToast("Üye silindi","warn"); };
+  const editMember = (m) => { setMForm({username:m.username,password:m.password,startDate:m.startDate,endDate:m.endDate,cost:m.cost,price:m.price,collected:m.collected,note:m.note||""}); setEditId(m.id); setModal("member"); };
+  const toggleCollected = (id) => setMembers(ms=>ms.map(m=>m.id===id?{...m,collected:!m.collected}:m));
+
+  // Deposit CRUD
+  const saveDeposit = () => {
+    if (!dForm.amount||Number(dForm.amount)<=0) { showToast("Geçerli tutar girin!","err"); return; }
+    setDeposits(ds=>[...ds,{...dForm,amount:Number(dForm.amount),id:uid()}]);
+    setDForm(EMPTY_D); setModal(null); showToast("Para yatırma kaydedildi ✓");
+  };
+  const deleteDeposit = (id) => { setDeposits(ds=>ds.filter(d=>d.id!==id)); showToast("Kayıt silindi","warn"); };
+
+  // Backup
+  const exportBackup = () => {
+    const data = {version:1, exportedAt:new Date().toISOString(), members, deposits};
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href=url; a.download=`tv-panel-yedek-${todayStr()}.json`; a.click();
+    URL.revokeObjectURL(url); showToast("Yedek indirildi ✓");
+  };
+  const importBackup = () => {
+    try {
+      const data = JSON.parse(backupText);
+      if (!Array.isArray(data.members)||!Array.isArray(data.deposits)) throw new Error();
+      setMembers(data.members); setDeposits(data.deposits);
+      setBackupText(""); setModal(null);
+      showToast(`${data.members.length} üye, ${data.deposits.length} ödeme geri yüklendi ✓`);
+    } catch { showToast("Geçersiz yedek dosyası!","err"); }
+  };
+  const importFile = (e) => {
+    const file=e.target.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>setBackupText(ev.target.result);
+    reader.readAsText(file);
+  };
+
+  // Filter + sort by endDate ascending
+  const filtered = members.filter(m => {
+    if (!m.username.toLowerCase().includes(search.toLowerCase())) return false;
+    const d=daysLeft(m.endDate);
+    if (filter==="active")  return d>7;
+    if (filter==="warn")    return d>=0&&d<=7;
+    if (filter==="expired") return d<0;
+    if (filter==="unpaid")  return !m.collected;
+    return true;
+  }).sort((a,b) => new Date(a.endDate) - new Date(b.endDate));
+  const counts = {
+    all:     members.length,
+    active:  members.filter(m=>daysLeft(m.endDate)>7).length,
+    warn:    members.filter(m=>{const d=daysLeft(m.endDate);return d>=0&&d<=7;}).length,
+    expired: members.filter(m=>daysLeft(m.endDate)<0).length,
+    unpaid:  members.filter(m=>!m.collected).length,
+  };
+
+  const MF=(k,v)=>setMForm(f=>({...f,[k]:v}));
+  const DF=(k,v)=>setDForm(f=>({...f,[k]:v}));
+
+  const inp = {background:"#0c0f1e",border:"1px solid #1c2035",color:"#d0d8f0",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%"};
+  const lbl = {fontSize:11,color:"#4a5470",textTransform:"uppercase",letterSpacing:"0.6px",fontWeight:700,marginBottom:5,display:"block"};
+
+  const StatusPill = ({endDate}) => {
+    const d=daysLeft(endDate);
+    const [bg,color,text] = d<0?["#ff464618","#ff6060","Süresi Doldu"]:d<=7?["#ffbe0018","#ffbe00",`⚠ ${d} gün`]:["#00dc7818","#00dc78",`✓ ${d} gün`];
+    return <span className="pill" style={{background:bg,color,border:`1px solid ${color}28`}}>{text}</span>;
+  };
+
+  const balColor = balance<0?"#ff5050":balance<300?"#ffbe00":"#00dc78";
+
+  return (
+    <div style={{minHeight:"100vh"}}>
+
+      {/* TOAST */}
+      {toast && (
+        <div style={{position:"fixed",top:16,right:16,zIndex:9999,background:toast.type==="err"?"#3a1010":toast.type==="warn"?"#2a2000":"#0f2a1a",border:`1px solid ${toast.type==="err"?"#ff4040":toast.type==="warn"?"#ffbe00":"#00c060"}40`,color:toast.type==="err"?"#ff8080":toast.type==="warn"?"#ffd040":"#40e090",padding:"10px 18px",borderRadius:10,fontSize:13,fontWeight:600,boxShadow:"0 4px 24px #00000060"}}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* NAV */}
+      <div style={{background:"#0b0d1a",borderBottom:"1px solid #131628"}}>
+        <div style={{padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:22}}>📺</span>
+            <span style={{fontWeight:800,fontSize:15,color:"#e0e8ff"}}>TV Panel</span>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>{setBackupText("");setModal("backup");}} style={{background:"#111526",border:"1px solid #1c2235",color:"#7090c0",padding:"6px 11px",borderRadius:8,fontSize:11,fontWeight:600}}>💾 Yedekle</button>
+            <button onClick={()=>{setDForm(EMPTY_D);setModal("deposit");}} style={{background:"#111526",border:"1px solid #1c2235",color:"#a0c0e0",padding:"6px 11px",borderRadius:8,fontSize:11,fontWeight:600}}>+ Para Yatır</button>
+            <button onClick={()=>{setMForm(EMPTY_M);setEditId(null);setModal("member");}} style={{background:"linear-gradient(135deg,#2e5fff,#7030ff)",border:"none",color:"#fff",padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700}}>+ Yeni Üye</button>
+          </div>
+        </div>
+        <div style={{display:"flex",borderTop:"1px solid #131628"}}>
+          {[["members","👥 Üyeler"],["finance","💰 Finans"],["deposits","🏦 Ödemeler"]].map(([k,l])=>(
+            <button key={k} className={`tab-btn${page===k?" active":""}`} onClick={()=>setPage(k)}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* BALANCE BAR */}
+      <div style={{background:"#0b0d1a",borderBottom:"1px solid #131628",padding:"10px 16px",display:"flex",gap:0,overflowX:"auto"}}>
+        {[
+          ["Arkadaşta Bakiye", balance, balColor],
+          ["Toplam Yatırdım",  totalDeposited, "#8090c0"],
+          ["Harcanan",         totalCost,      "#ff7070"],
+          ["Tahsil Edildi",    totalCollected, "#00dc78"],
+          ["Tahsil Bekleyen",  totalReceivable,"#ffbe00"],
+          ["Brüt Kar",         grossProfit,    grossProfit>=0?"#00dc78":"#ff5050"],
+        ].map(([label,val,color],i,arr)=>(
+          <div key={i} style={{display:"flex",flexDirection:"column",gap:2,padding:"2px 16px",borderRight:i<arr.length-1?"1px solid #131628":"none",minWidth:120}}>
+            <span style={{fontSize:9,color:"#38405a",textTransform:"uppercase",letterSpacing:".6px",fontWeight:700}}>{label}</span>
+            <span style={{fontSize:15,fontWeight:800,color}}>{fmt(val)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{padding:"16px"}}>
+
+        {/* MEMBERS */}
+        {page==="members" && (
+          <>
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+              <input className="inp" value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Üye ara..." style={{...inp,width:200}}/>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[["all","Tümü"],["active","Aktif"],["warn","Yakında"],["expired","Süresi Doldu"],["unpaid","Ödenmemiş"]].map(([k,l])=>(
+                  <button key={k} className={`filter-btn${filter===k?" active":""}`} onClick={()=>setFilter(k)}>
+                    {l} <span style={{background:"#0a0d1a",borderRadius:10,padding:"1px 6px",marginLeft:3,fontSize:11}}>{counts[k]??0}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{background:"#0b0d1a",border:"1px solid #131628",borderRadius:12,overflow:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{background:"#0e1020"}}>
+                    {["Kullanıcı Adı","Şifre","Başlangıç","Bitiş","Durum","Maliyet","Satış","Kar","Ödeme","Not",""].map((h,i)=>(
+                      <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length===0 && (
+                    <tr><td colSpan={11} style={{textAlign:"center",padding:"48px",color:"#202838"}}>
+                      {members.length===0?"Henüz üye yok — sağ üstten ekleyin.":"Sonuç bulunamadı."}
+                    </td></tr>
+                  )}
+                  {filtered.map(m=>{
+                    const profit=Number(m.price||0)-Number(m.cost||0);
+                    return (
+                      <tr key={m.id} className="tr" style={{borderBottom:"1px solid #0d1020"}}>
+                        <td style={{padding:"9px 12px",fontWeight:600,color:"#b0c0e0"}}>{m.username}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontFamily:"monospace",color:"#607090",fontSize:12}}>{showPwd[m.id]?m.password:"••••••"}</span>
+                            <button className="ibtn" onClick={()=>setShowPwd(s=>({...s,[m.id]:!s[m.id]}))} style={{color:"#304060"}}>{showPwd[m.id]?"🙈":"👁"}</button>
+                          </div>
+                        </td>
+                        <td style={{padding:"9px 12px",color:"#485068",fontSize:12}}>{m.startDate}</td>
+                        <td style={{padding:"9px 12px",color:"#485068",fontSize:12}}>{m.endDate}</td>
+                        <td style={{padding:"9px 12px"}}><StatusPill endDate={m.endDate}/></td>
+                        <td style={{padding:"9px 12px",color:"#ff8080",fontWeight:600}}>{fmt(m.cost)}</td>
+                        <td style={{padding:"9px 12px",color:"#80c0ff",fontWeight:600}}>{fmt(m.price)}</td>
+                        <td style={{padding:"9px 12px",color:profit>=0?"#00dc78":"#ff5050",fontWeight:700}}>{fmt(profit)}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          <button onClick={()=>toggleCollected(m.id)} style={{background:m.collected?"#00dc7820":"#ff505020",border:`1px solid ${m.collected?"#00dc7840":"#ff505040"}`,color:m.collected?"#00dc78":"#ff7070",borderRadius:20,padding:"3px 12px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",cursor:"pointer"}}>
+                            {m.collected?"✓ Ödendi":"✗ Ödenmedi"}
+                          </button>
+                        </td>
+                        <td style={{padding:"9px 12px",color:"#485068",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.note||"—"}</td>
+                        <td style={{padding:"9px 12px"}}>
+                          <div style={{display:"flex",gap:2}}>
+                            <button className="ibtn" onClick={()=>editMember(m)} style={{color:"#4a70b0"}} title="Düzenle">✏️</button>
+                            <button className="ibtn" onClick={()=>setDelId(m.id)} style={{color:"#804040"}} title="Sil">🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* FINANCE */}
+        {page==="finance" && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:12}}>
+            {[
+              ["💰 Arkadaşta Bakiyem", fmt(balance), balColor, balance<0?"⚠ Yetersiz bakiye!":"Bakiye yeterli"],
+              ["⬆️ Toplam Yatırdım",  fmt(totalDeposited), "#8090c0", `${deposits.length} ayrı ödeme`],
+              ["⬇️ Toplam Harcanan",  fmt(totalCost),      "#ff7070", `${members.length} üye maliyeti`],
+              ["📋 Toplam Satış",     fmt(totalPrice),     "#80b0ff", `${members.length} üye`],
+              ["✅ Tahsil Edildi",    fmt(totalCollected), "#00dc78", `${members.filter(m=>m.collected).length} üye ödedi`],
+              ["⏳ Tahsil Bekleyen", fmt(totalReceivable),"#ffbe00", `${members.filter(m=>!m.collected).length} üye ödemedi`],
+              ["📈 Brüt Kar",        fmt(grossProfit),    grossProfit>=0?"#00dc78":"#ff5050","Satış − Maliyet"],
+            ].map(([title,val,color,sub])=>(
+              <div key={title} style={{background:"#0b0d1a",border:"1px solid #131628",borderRadius:12,padding:"16px 18px"}}>
+                <div style={{fontSize:11,color:"#38405a",marginBottom:8,fontWeight:600}}>{title}</div>
+                <div style={{fontSize:20,fontWeight:800,color,marginBottom:4}}>{val}</div>
+                <div style={{fontSize:11,color:"#2e3850"}}>{sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* DEPOSITS */}
+        {page==="deposits" && (
+          <div style={{background:"#0b0d1a",border:"1px solid #131628",borderRadius:12,overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{background:"#0e1020"}}>
+                  {["Tarih","Tutar","Not",""].map((h,i)=>(
+                    <th key={i} style={{padding:"9px 16px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {deposits.length===0&&<tr><td colSpan={4} style={{textAlign:"center",padding:"48px",color:"#202838"}}>Henüz para yatırma kaydı yok</td></tr>}
+                {[...deposits].sort((a,b)=>b.date.localeCompare(a.date)).map(d=>(
+                  <tr key={d.id} className="tr" style={{borderBottom:"1px solid #0d1020"}}>
+                    <td style={{padding:"10px 16px",color:"#607090"}}>{d.date}</td>
+                    <td style={{padding:"10px 16px",color:"#00dc78",fontWeight:700,fontSize:15}}>{fmt(d.amount)}</td>
+                    <td style={{padding:"10px 16px",color:"#485068"}}>{d.note||"—"}</td>
+                    <td style={{padding:"10px 16px"}}><button className="ibtn" onClick={()=>deleteDeposit(d.id)} style={{color:"#804040"}}>🗑️</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL: MEMBER */}
+      {modal==="member" && (
+        <div className="overlay" onClick={()=>setModal(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0d1020",border:"1px solid #1c2238",borderRadius:16,padding:24,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
+            <h3 style={{marginBottom:18,color:"#c0d0f0",fontWeight:700}}>{editId?"✏️ Üyeyi Düzenle":"➕ Yeni Üye Ekle"}</h3>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={lbl}>Kullanıcı Adı *</label>
+                <input className="inp" style={inp} value={mForm.username} onChange={e=>MF("username",e.target.value)} placeholder="kullanici_adi"/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={lbl}>Şifre *</label>
+                <input className="inp" style={inp} value={mForm.password} onChange={e=>MF("password",e.target.value)} placeholder="şifre123"/>
+              </div>
+              <div>
+                <label style={lbl}>Başlangıç *</label>
+                <input className="inp" style={inp} type="date" value={mForm.startDate} onChange={e=>MF("startDate",e.target.value)}/>
+              </div>
+              <div>
+                <label style={lbl}>Bitiş *</label>
+                <input className="inp" style={inp} type="date" value={mForm.endDate} onChange={e=>MF("endDate",e.target.value)}/>
+              </div>
+              <div>
+                <label style={lbl}>Maliyet (₺)</label>
+                <input className="inp" style={inp} type="number" value={mForm.cost} onChange={e=>MF("cost",e.target.value)} placeholder="0.00"/>
+              </div>
+              <div>
+                <label style={lbl}>Satış Fiyatı (₺)</label>
+                <input className="inp" style={inp} type="number" value={mForm.price} onChange={e=>MF("price",e.target.value)} placeholder="0.00"/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={lbl}>Not</label>
+                <input className="inp" style={inp} value={mForm.note} onChange={e=>MF("note",e.target.value)} placeholder="İsteğe bağlı not..."/>
+              </div>
+              <div style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:10}}>
+                <input type="checkbox" id="col" checked={mForm.collected} onChange={e=>MF("collected",e.target.checked)} style={{width:16,height:16,accentColor:"#00dc78"}}/>
+                <label htmlFor="col" style={{color:"#6080a0",fontSize:13,cursor:"pointer"}}>Ücret tahsil edildi</label>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:20}}>
+              <button onClick={()=>setModal(null)} style={{flex:1,background:"#111428",border:"1px solid #1c2235",color:"#607090",borderRadius:8,padding:"10px",fontSize:13,fontWeight:600}}>İptal</button>
+              <button onClick={saveMember} style={{flex:2,background:"linear-gradient(135deg,#2e5fff,#7030ff)",border:"none",color:"#fff",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700}}>{editId?"Güncelle":"Kaydet"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DEPOSIT */}
+      {modal==="deposit" && (
+        <div className="overlay" onClick={()=>setModal(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0d1020",border:"1px solid #1c2238",borderRadius:16,padding:24,width:"100%",maxWidth:360}}>
+            <h3 style={{marginBottom:18,color:"#c0d0f0",fontWeight:700}}>💰 Para Yatır</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={lbl}>Tutar (₺) *</label>
+                <input className="inp" style={inp} type="number" value={dForm.amount} onChange={e=>DF("amount",e.target.value)} placeholder="0.00"/>
+              </div>
+              <div>
+                <label style={lbl}>Tarih</label>
+                <input className="inp" style={inp} type="date" value={dForm.date} onChange={e=>DF("date",e.target.value)}/>
+              </div>
+              <div>
+                <label style={lbl}>Not</label>
+                <input className="inp" style={inp} value={dForm.note} onChange={e=>DF("note",e.target.value)} placeholder="Ödeme notu..."/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:20}}>
+              <button onClick={()=>setModal(null)} style={{flex:1,background:"#111428",border:"1px solid #1c2235",color:"#607090",borderRadius:8,padding:"10px",fontSize:13,fontWeight:600}}>İptal</button>
+              <button onClick={saveDeposit} style={{flex:2,background:"linear-gradient(135deg,#10a060,#0060c0)",border:"none",color:"#fff",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700}}>Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: BACKUP */}
+      {modal==="backup" && (
+        <div className="overlay" onClick={()=>setModal(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0d1020",border:"1px solid #1c2238",borderRadius:16,padding:24,width:"100%",maxWidth:430}}>
+            <h3 style={{marginBottom:6,color:"#c0d0f0",fontWeight:700}}>💾 Yedekleme</h3>
+            <p style={{color:"#38405a",fontSize:12,marginBottom:20}}>Verilerinizi bilgisayarınıza kaydedin veya yedeği geri yükleyin.</p>
+
+            <div style={{background:"#090c18",border:"1px solid #131628",borderRadius:10,padding:14,marginBottom:12}}>
+              <div style={{fontSize:11,color:"#5070a0",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>📤 Yedek Al</div>
+              <p style={{color:"#38405a",fontSize:12,marginBottom:10}}>{members.length} üye ve {deposits.length} ödeme JSON olarak indirilir.</p>
+              <button onClick={exportBackup} style={{background:"#182848",border:"1px solid #2050a0",color:"#80b0ff",borderRadius:8,padding:"9px",fontSize:13,fontWeight:700,width:"100%",cursor:"pointer"}}>⬇️ Yedeği İndir (.json)</button>
+            </div>
+
+            <div style={{background:"#090c18",border:"1px solid #131628",borderRadius:10,padding:14}}>
+              <div style={{fontSize:11,color:"#a07030",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:".5px"}}>📥 Yedeği Geri Yükle</div>
+              <p style={{color:"#38405a",fontSize:12,marginBottom:10}}>⚠️ Mevcut tüm veriler silinip yedekteki verilerle değiştirilir.</p>
+              <label style={{display:"block",background:"#0e1220",border:"2px dashed #1c2438",borderRadius:8,padding:"12px",textAlign:"center",color:"#4060a0",fontSize:12,cursor:"pointer",marginBottom:backupText?10:0}}>
+                📁 Yedek dosyası seç (.json)
+                <input type="file" accept=".json" onChange={importFile} style={{display:"none"}}/>
+              </label>
+              {backupText && (
+                <>
+                  <div style={{background:"#0a1020",border:"1px solid #1a3050",borderRadius:6,padding:"8px 12px",color:"#00b060",fontSize:11,marginBottom:10}}>✓ Dosya hazır — geri yüklemek için butona basın.</div>
+                  <button onClick={importBackup} style={{background:"#3a1010",border:"1px solid #6a2020",color:"#ffb090",borderRadius:8,padding:"9px",fontSize:13,fontWeight:700,width:"100%",cursor:"pointer"}}>⚠️ Geri Yükle (Verilerin Üzerine Yazar)</button>
+                </>
+              )}
+            </div>
+            <button onClick={()=>{setModal(null);setBackupText("");}} style={{marginTop:12,background:"#111428",border:"1px solid #1c2235",color:"#607090",borderRadius:8,padding:"9px",fontSize:13,fontWeight:600,width:"100%",cursor:"pointer"}}>Kapat</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DELETE */}
+      {delId && (
+        <div className="overlay" onClick={()=>setDelId(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0d1020",border:"1px solid #3a1010",borderRadius:16,padding:28,width:"100%",maxWidth:300,textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <h3 style={{color:"#ff8080",marginBottom:8}}>Üyeyi Sil</h3>
+            <p style={{color:"#485068",fontSize:13,marginBottom:22}}>Bu üye kalıcı olarak silinecek. Emin misiniz?</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setDelId(null)} style={{flex:1,background:"#111428",border:"1px solid #1c2235",color:"#607090",borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer"}}>İptal</button>
+              <button onClick={deleteMember} style={{flex:1,background:"#3a1010",border:"1px solid #6a2020",color:"#ff8080",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Sil</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
