@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "exportedAt": "2026-05-19T10:03:02.432Z",
+  "members": [
+    {
+      "username": "RSchleich",
+      "password": "p3pygQt",
+      "startDate": "2026-05-13",
+      "endDate": "2027-05-13",
+      "cost": 25,
+      "price": 70,
+      "collected": true,
+      "note": "Leonardo",
+      "id": "mpbpbubikqc"
+    },
+    {
+      "username": "Musa38",
+      "password": "67ViM7Nuvg",
+      "startDate": "2026-05-13",
+      "endDate": "2027-05-13",
+      "cost": 25,
+      "price": 30,
+      "collected": false,
+      "note": "",
+      "id": "mpbpe4o3qee"
+    },
+    {
+      "username": "FrankBohme",
+      "password": "htHhd5c",
+      "startDate": "2026-05-08",
+      "endDate": "2027-05-08",
+      "cost": 25,
+      "price": 70,
+      "collected": true,
+      "note": "Alfanso şef ",
+      "id": "mpbpgi3z3w6"
+    }
+  ],
+  "deposits": []
+}
