@@ -57,6 +57,7 @@ function App() {
   const [search,   setSearch]   = useState("");
   const [filter,   setFilter]   = useState("all");
   const [showPwd,  setShowPwd]  = useState({});
+  const [showFin,  setShowFin]  = useState(false);
   const [delId,    setDelId]    = useState(null);
   const [toast,    setToast]    = useState(null);
   const [backupText, setBackupText] = useState("");
@@ -160,7 +161,7 @@ function App() {
   const DF=(k,v)=>setDForm(f=>({...f,[k]:v}));
 
   const inp = {background:"#0c0f1e",border:"1px solid #1c2035",color:"#d0d8f0",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%"};
-  const lbl = {fontSize:11,color:"#4a5470",textTransform:"uppercase",letterSpacing:"0.6px",fontWeight:700,marginBottom:5,display:"block"};
+  const lbl = {fontSize:11,color:"#8a9dc0",textTransform:"uppercase",letterSpacing:"0.6px",fontWeight:700,marginBottom:5,display:"block"};
 
   const StatusPill = ({endDate}) => {
     const d=daysLeft(endDate);
@@ -237,7 +238,19 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead>
                   <tr style={{background:"#0e1020"}}>
-                    {["Kullanıcı Adı","Şifre","Başlangıç","Bitiş","Durum","Maliyet","Satış","Kar","Ödeme","Not",""].map((h,i)=>(
+                    {["Kullanıcı Adı","Şifre","Başlangıç","Bitiş","Durum",
+                      null,null,null,
+                      "Ödeme","Not",""].map((h,i)=>{
+                      if (i===5) return <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428",whiteSpace:"nowrap"}}>
+                        <span style={{display:"flex",alignItems:"center",gap:4}}>
+                          {showFin?"Maliyet":"———"}
+                          <button onClick={()=>setShowFin(s=>!s)} title={showFin?"Fiyatları Gizle":"Fiyatları Göster"} style={{background:"#1a2040",border:"1px solid #2a3060",color:"#6080b0",borderRadius:4,padding:"1px 6px",fontSize:10,cursor:"pointer",marginLeft:2}}>{showFin?"🙈":"👁"}</button>
+                        </span>
+                      </th>;
+                      if (i===6) return <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428",whiteSpace:"nowrap"}}>{showFin?"Satış":"———"}</th>;
+                      if (i===7) return <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428",whiteSpace:"nowrap"}}>{showFin?"Kar":"———"}</th>;
+                      if (h===null) return null;
+                      return (
                       <th key={i} style={{padding:"9px 12px",textAlign:"left",fontSize:10,color:"#2e3850",textTransform:"uppercase",letterSpacing:".5px",fontWeight:700,borderBottom:"1px solid #111428",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
@@ -262,15 +275,15 @@ function App() {
                         <td style={{padding:"9px 12px",color:"#485068",fontSize:12}}>{m.startDate}</td>
                         <td style={{padding:"9px 12px",color:"#485068",fontSize:12}}>{m.endDate}</td>
                         <td style={{padding:"9px 12px"}}><StatusPill endDate={m.endDate}/></td>
-                        <td style={{padding:"9px 12px",color:"#ff8080",fontWeight:600}}>{fmt(m.cost)}</td>
-                        <td style={{padding:"9px 12px",color:"#80c0ff",fontWeight:600}}>{fmt(m.price)}</td>
-                        <td style={{padding:"9px 12px",color:profit>=0?"#00dc78":"#ff5050",fontWeight:700}}>{fmt(profit)}</td>
+                        <td style={{padding:"9px 12px",color:"#ff8080",fontWeight:600}}>{showFin?fmt(m.cost):<span style={{color:"#2a3050",letterSpacing:2}}>••••</span>}</td>
+                        <td style={{padding:"9px 12px",color:"#80c0ff",fontWeight:600}}>{showFin?fmt(m.price):<span style={{color:"#2a3050",letterSpacing:2}}>••••</span>}</td>
+                        <td style={{padding:"9px 12px",color:profit>=0?"#00dc78":"#ff5050",fontWeight:700}}>{showFin?fmt(profit):<span style={{color:"#2a3050",letterSpacing:2}}>••••</span>}</td>
                         <td style={{padding:"9px 12px"}}>
                           <button onClick={()=>toggleCollected(m.id)} style={{background:m.collected?"#00dc7820":"#ff505020",border:`1px solid ${m.collected?"#00dc7840":"#ff505040"}`,color:m.collected?"#00dc78":"#ff7070",borderRadius:20,padding:"3px 12px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",cursor:"pointer"}}>
                             {m.collected?"✓ Ödendi":"✗ Ödenmedi"}
                           </button>
                         </td>
-                        <td style={{padding:"9px 12px",color:"#485068",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.note||"—"}</td>
+                        <td style={{padding:"9px 12px",color:"#8090b0",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.note||"—"}</td>
                         <td style={{padding:"9px 12px"}}>
                           <div style={{display:"flex",gap:2}}>
                             <button className="ibtn" onClick={()=>editMember(m)} style={{color:"#4a70b0"}} title="Düzenle">✏️</button>
